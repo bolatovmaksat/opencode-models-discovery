@@ -137,7 +137,10 @@ export function createModelsDevReader() {
       const [primary, supplement] = await Promise.all([
         read(url), url === DEFAULT_MODELS_DEV_URL ? read(PROVIDER_CATALOG_URL) : undefined,
       ])
-      return matchModelsDevEfforts(primary?.efforts, supplement?.efforts)
+      // Gateway models are often aliased under an upstream account (`chiyicn/gpt-6.2-sol`),
+      // so resolve unknown routes through the same metadata match that names the model.
+      return matchModelsDevEfforts(primary?.efforts, supplement?.efforts, (modelID) =>
+        primary?.models ? lookupModelsDevData(modelID, primary.models)?.id : undefined)
     },
   }
 }

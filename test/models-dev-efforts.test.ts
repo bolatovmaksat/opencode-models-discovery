@@ -39,9 +39,12 @@ describe('loadModelsDevEfforts', () => {
     expect(lookup('chat-pro')).toEqual(['low', 'max'])
     expect(lookup('gateway/openai/chat-pro')).toEqual(['custom-level'])
     expect(lookup('new-model')).toEqual(['medium'])
-    for (const id of ['unknown/chat-pro', 'chat-pro-2099', 'chat-pro:free', 'OPENAI/chat-pro']) {
-      expect(lookup(id)).toBeUndefined()
-    }
+    // Gateway aliases reuse the canonical route's declaration through the metadata match.
+    expect(lookup('unknown/chat-pro')).toEqual(['low', 'max'])
+    expect(lookup('chat-pro-2099')).toEqual(['low', 'max'])
+    expect(lookup('chat-pro:free')).toEqual(['low', 'max'])
+    expect(lookup('OPENAI/chat-pro')).toEqual(['low', 'max'])
+    expect(lookup('unknown/no-such-model')).toBeUndefined()
     // When provider is specified, prioritize that provider's own route
     expect(lookup('openai/chat-pro', 'gateway')).toEqual(['custom-level'])
     expect(lookup('chat-pro', 'gateway')).toEqual(['high'])

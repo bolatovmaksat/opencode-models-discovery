@@ -63,29 +63,48 @@ export function indexEfforts(data: unknown, layout: 'flat' | 'providers' | 'mirr
   if (routes.size) return { routes, shortNames }
 }
 
+/**
+ * Resolves declared reasoning efforts for a discovered model id.
+ *
+ * `canonicalRoute` maps a discovered id to the models.dev route its metadata
+ * resolves to. It is only consulted when no index knows the requested route, so
+ * a route that models.dev declares itself stays authoritative, including one
+ * that declares reasoning without named efforts. This lets gateway aliases such
+ * as `chiyicn/gpt-6.2-sol` reuse the efforts declared for `openai/gpt-6.2-sol`
+ * instead of falling back to the generic low/medium/high tiers.
+ */
 export function matchModelsDevEfforts(
   primary?: EffortIndex,
   supplement?: EffortIndex,
+  canonicalRoute?: (modelID: string) => string | undefined,
 ): (modelID: string, providerID?: string) => Efforts {
-  return (modelID, providerID) => {
-    let route: string | null | undefined
-    if (providerID) {
-      const providerLower = providerID.toLowerCase()
-      const providerRoute = `${providerLower}/${modelID}`
-      if (primary?.routes.has(providerRoute) || supplement?.routes.has(providerRoute)) {
-        route = providerRoute
-      }
-    }
-    if (!route) {
-      route = modelID
-      if (!modelID.includes('/')) {
-        if (!primary) return // A missing primary index cannot establish a unique short name.
-        route = primary.routes.has(modelID) ? modelID : primary.shortNames.get(modelID)
-        if (route === undefined) route = supplement?.shortNames.get(modelID)
-      }
-    }
-    if (route == null) return
+  const effortsFor = (route: string): Efforts => {
     const efforts = primary?.routes.get(route) ?? supplement?.routes.get(route)
     return efforts?.length ? efforts : undefined
+  }
+  const known = (route: string): boolean =>
+    Boolean(primary?.routes.has(route) || supplement?.routes.has(route))
+
+  return (modelID, providerID) => {
+    if (providerID) {
+      const providerRoute = `${providerID.toLowerCase()}/${modelID}`
+      if (known(providerRoute)) return effortsFor(providerRoute)
+    }
+
+    if (modelID.includes('/')) {
+      if (known(modelID)) return effortsFor(modelID)
+    } else if (primary) {
+      // A missing primary index cannot establish a unique short name.
+      const shortRoute = primary.routes.has(modelID) ? modelID : primary.shortNames.get(modelID)
+      if (shortRoute) return effortsFor(shortRoute)
+      if (shortRoute === null) return // More than one model shares this short name.
+      const supplementRoute = supplement?.shortNames.get(modelID)
+      if (supplementRoute) return effortsFor(supplementRoute)
+    }
+
+    if (!canonicalRoute) return
+    const canonical = canonicalRoute(modelID)
+    if (!canonical || canonical === modelID) return
+    return effortsFor(canonical)
   }
 }

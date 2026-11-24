@@ -485,4 +485,63 @@ describe("V2 provider discovery with metadata enrichment", () => {
       modelsDevTestUtils.resetCache()
     }
   })
+
+  it("resolves gateway-aliased models through their canonical models.dev route", async () => {
+    modelsDevTestUtils.resetCache()
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "https://models.dev/models.json") {
+        return Response.json({
+          "openai/gpt-6.2-sol": { id: "openai/gpt-6.2-sol", name: "GPT-6.2 Sol", reasoning: true },
+        })
+      }
+      if (url === "https://models.dev/api.json") {
+        return Response.json({
+          openai: {
+            models: {
+              "gpt-6.2-sol": {
+                id: "gpt-6.2-sol",
+                reasoning_options: [{ type: "effort", values: ["low", "medium", "high", "xhigh", "max"] }],
+              },
+            },
+          },
+          // A gateway row without named efforts must not shadow the canonical declaration.
+          "9router": { models: { "gpt-6.2-sol": { id: "gpt-6.2-sol" } } },
+        })
+      }
+      return new Response(null, { status: 404 })
+    }))
+
+    const options = new Map([
+      ["9router", parseProviderDiscoveryOptions({
+        enabled: true,
+        modelInfoFormat: ModelInfoFormat.ModelsDev,
+      })!],
+    ])
+
+    const providerFetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: "chiyicn/gpt-6.2-sol", context_length: 1_050_000, max_completion_tokens: 128_000 }] }),
+    })
+
+    try {
+      const inventory = await discoverInventory([{
+        id: "9router",
+        package: "@opencode/ai/providers/openai-compatible",
+        settings: { baseURL: "https://9router.example.com/v1" },
+      }], options, providerFetcher as unknown as typeof fetch)
+
+      const model = inventory.get("9router")?.get("chiyicn/gpt-6.2-sol")
+      expect(model?.reasoning).toBe(true)
+      expect(model?.variants).toEqual([
+        { id: "low", settings: { reasoningEffort: "low" } },
+        { id: "medium", settings: { reasoningEffort: "medium" } },
+        { id: "high", settings: { reasoningEffort: "high" } },
+        { id: "xhigh", settings: { reasoningEffort: "xhigh" } },
+        { id: "max", settings: { reasoningEffort: "max" } },
+      ])
+    } finally {
+      vi.unstubAllGlobals()
+      modelsDevTestUtils.resetCache()
+    }
+  })
 })
